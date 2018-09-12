@@ -1,0 +1,2 @@
+$ cat .gitattributes
+*.CMake linguist-language=Jupyter Notebook
