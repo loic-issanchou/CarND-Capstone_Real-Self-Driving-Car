@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+# -*- coding: iso-8859-15 -*-
 from styx_msgs.msg import TrafficLight
 import rospy
 import numpy as np
@@ -7,13 +9,16 @@ import tensorflow as tf
 class TLClassifier(object):
     def __init__(self):
 	
-        self.detection_threshold = 0.03
+        self.detection_threshold = 0.10
 	
 	self.traffic_light_box = []
 	#self.traffic_light_scores = []
 	
         #TODO load classifier
-	MODEL_NAME = 'ssd_mobilenet_v1_coco_2018_01_28'
+        #https://github.com/tensorflow/models/blob/master/research/object_detection/g3doc/detection_model_zoo.md
+        #https://github.com/ActivateState/gococo
+	#MODEL_NAME = 'ssd_mobilenet_v1_coco_2018_01_28'  #not compatible with TensorFlow 1.3.0 which is the version installed on Carla
+        MODEL_NAME = 'ssd_mobilenet_v1_coco_11_06_2017'
         PATH_TO_CKPT = MODEL_NAME + '/frozen_inference_graph.pb'
 		
 	self.detection_graph = tf.Graph()
@@ -21,21 +26,21 @@ class TLClassifier(object):
 	with self.detection_graph.as_default():
             od_graph_def = tf.GraphDef()
             with tf.gfile.GFile(PATH_TO_CKPT, 'rb') as fid:
-                serialized_graph = fid.read()
+                serialized_graph = fid.read()#ioutil.ReadFile(PATH_TO_CKPT)
                 od_graph_def.ParseFromString(serialized_graph)
                 tf.import_graph_def(od_graph_def, name='')
 				
 	    self.sess = tf.Session(graph=self.detection_graph)
 			
-	# Definite input and output Tensors for detection_graph
-        self.image_tensor = self.detection_graph.get_tensor_by_name('image_tensor:0')
-        # Each box represents a part of the image where a particular object was detected.
-        self.detection_boxes = self.detection_graph.get_tensor_by_name('detection_boxes:0')
-        # Each score represent how level of confidence for each of the objects.
-        # Score is shown on the result image, together with the class label.
-        self.detection_scores = self.detection_graph.get_tensor_by_name('detection_scores:0')
-        self.detection_classes = self.detection_graph.get_tensor_by_name('detection_classes:0')
-        self.detections_num = self.detection_graph.get_tensor_by_name('num_detections:0')
+	    # Definite input and output Tensors for detection_graph
+            self.image_tensor = self.detection_graph.get_tensor_by_name('image_tensor:0')
+            # Each box represents a part of the image where a particular object was detected.
+            self.detection_boxes = self.detection_graph.get_tensor_by_name('detection_boxes:0')
+            # Each score represent how level of confidence for each of the objects.
+            # Score is shown on the result image, together with the class label.
+            self.detection_scores = self.detection_graph.get_tensor_by_name('detection_scores:0')
+            self.detection_classes = self.detection_graph.get_tensor_by_name('detection_classes:0')
+            self.detections_num = self.detection_graph.get_tensor_by_name('num_detections:0')
 
     def get_localization(self, image):
         """Detect objects in image according to COCO labels
@@ -47,7 +52,7 @@ class TLClassifier(object):
 		
 	image_array = np.asarray(image, dtype="uint8")
 		
-	# Expand dimensions since the model expects images to have shape: [1, None, None, 3]
+	# Expand dimensions 
         image_expanded = np.expand_dims(image_array, axis=0)
 
         with self.detection_graph.as_default():
@@ -67,8 +72,12 @@ class TLClassifier(object):
 	max_score_idx = -1
 	max_score = 0
 		
+        #rospy.logwarn('Number of bounding boxe[s] detected : %s\n', len(boxes))
+
 	for idx, classe in enumerate(classes):
 	    if classe == 10:   # 10 is the label of traffic light bounding boxes
+                #rospy.logwarn('Box trafficlight : %s\n', idx)
+                #rospy.logwarn('boxes[idx] : %s\n', boxes[idx])
 	        traffic_light_boxes.append(boxes[idx])
 		traffic_light_scores.append(scores[idx])
 		if scores[idx] > max_score:
@@ -76,13 +85,16 @@ class TLClassifier(object):
 		    max_score_idx = idx 
 				
 	number_traffic_light_boxes = len(traffic_light_boxes)
+        #rospy.logwarn('number_traffic_light_boxes : %s\n', number_traffic_light_boxes)
+        #rospy.logwarn('max_score_idx : %s\n', max_score_idx)
+        #rospy.logwarn('max_score : %s\n', max_score)
 				
-	if number_traffic_light_boxes > 0 and max_score > 0.2:
+	if number_traffic_light_boxes > 0 and max_score > 0.4:
 	    rospy.logwarn('Number of bounding boxe[s] detected : {0}\n', len(traffic_light_boxes))
 	    return traffic_light_boxes[max_score_idx] # assuming that there is only one traffic light at the time in the real application
 	else:
 	    rospy.logwarn('No traffic light bounding box detected !\n')
-	    return None#[0, 0, 0, 0]#utiliser un flag pour gerer le cas où il n'y a pas de feu tricolore dans l'image. Renvoyer vers la fonction de dtection de couleur avant le 'return' de cette fonction
+	    return None#[0, 0, 0, 0]
 		
     def get_classification(self, image, box):
         """Determines the color of the traffic light in the image
@@ -95,8 +107,18 @@ class TLClassifier(object):
 	height = image.shape[0]
         width = image.shape[1]
 
-        box_pixel = np.array([box[0]*height, box[1]*width, box[2]*height, box[3]*width]).astype(int)
+        #rospy.logwarn('box[0] : %s\n', box[0])
+        #rospy.logwarn('box[1] : %s\n', box[1])
+        #rospy.logwarn('box[2] : %s\n', box[2])
+        #rospy.logwarn('box[3] : %s\n', box[3])
+
+        box_pixel = np.array([int(box[0]*height), int(box[1]*width), int(box[2]*height), int(box[3]*width)])#.astype(int)
 		
+        #rospy.logwarn('box_pixel[0] : %s\n', box_pixel[0])
+        #rospy.logwarn('box_pixel[1] : %s\n', box_pixel[1])
+        #rospy.logwarn('box_pixel[2] : %s\n', box_pixel[2])
+        #rospy.logwarn('box_pixel[3] : %s\n', box_pixel[3])
+
 	cropped_image = image[box_pixel[0]:box_pixel[2], box_pixel[1]:box_pixel[3]]
 		
 	final_size = (20, 80)
@@ -108,19 +130,19 @@ class TLClassifier(object):
         img_hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)
 		
 	# define range of green color in HSV
-	lower_green = np.array([36, 0, 0])
-        upper_green = np.array([70,255,255])
+	lower_green = np.array([80, 0, 40])
+        upper_green = np.array([160,100,80])
 	# Threshold the HSV image to get only green colors
 	mask_green = cv2.inRange(img_hsv, lower_green, upper_green)
 
 	# lower mask red (0-10)
-        lower_red = np.array([0,50,50])
+        lower_red = np.array([0,0,0])
         upper_red = np.array([10,255,255])
 	# Threshold the HSV image to get only red colors - lower mask
         low_mask_red = cv2.inRange(img_hsv, lower_red, upper_red)
 
         # upper mask red (170-180)
-        lower_red = np.array([170,255,255])
+        lower_red = np.array([160,0,0])
         upper_red = np.array([180,255,255])
 	# Threshold the HSV image to get only red colors - upper mask
         up_mask_red = cv2.inRange(img_hsv, lower_red, upper_red)
@@ -132,7 +154,7 @@ class TLClassifier(object):
 	rate_green = np.count_nonzero(mask_green) / (final_size[0]*final_size[1]) 
 	rate_red = np.count_nonzero(mask_red) / (final_size[0]*final_size[1]) 
 		
-	if rate_green > self.detection_threshold:
+	if rate_green > self.detection_threshold and rate_green > rate_red:
 	    return 2 #green
 	elif rate_red > self.detection_threshold:
 	    return 0 #red
@@ -142,14 +164,14 @@ class TLClassifier(object):
     def pipeline_classification(self, image):
 	    
 	# Use deep neural network to return detection bounding boxes
-	boxes, classes, scores = get_localization(image)
+	boxes, classes, scores = self.get_localization(image)
 		
-	box = get_traffic_light_box(boxes, classes, scores)
+	box = self.get_traffic_light_box(boxes, classes, scores)
 									   
 	if box == None:
 	    return TrafficLight.UNKNOWN
 			
-	state_light = get_classification(image, box)
+	state_light = self.get_classification(image, box)
 		
 	if state_light == 0:
             return TrafficLight.RED

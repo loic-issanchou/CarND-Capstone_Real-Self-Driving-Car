@@ -56,18 +56,20 @@ class TLDetector(object):
 
     def pose_cb(self, msg):
         self.pose = msg
-        rospy.logwarn("pose x: {0}\n".format(self.pose.linear.linear.x))
-        rospy.logwarn("pose y: {0}\n".format(self.pose.linear.linear.y))
+        #rospy.logwarn("pose x: {0} |".format(self.pose.pose.position.x))
+        #rospy.logwarn("pose y: {0}\n".format(self.pose.pose.position.y))
 
     def waypoints_cb(self, waypoints):
         self.waypoints = waypoints
         if not self.waypoints_2d:
             self.waypoints_2d = [[waypoint.pose.pose.position.x, waypoint.pose.pose.position.y] for waypoint in waypoints.waypoints]
             self.waypoint_tree = KDTree(self.waypoints_2d)
+        #rospy.logwarn("waypoints_cb\n")
 
     def traffic_cb(self, msg):
         self.lights = msg.lights
         #rospy.logwarn("lights[0]: {0}\n".format(self.lights[0].state))
+        #rospy.logwarn("traffic_cb\n") 
 
     def image_cb(self, msg):
         """Identifies red lights in the incoming camera image and publishes the index
@@ -78,12 +80,13 @@ class TLDetector(object):
 
         """
         self.has_image = True
-        if self.has_image:
-            rospy.logwarn("self.has_image\n")
+        #if self.has_image:
+        #    rospy.logwarn("self.has_image\n ")
         self.camera_image = msg
 
         light_wp, state = self.process_traffic_lights()
-        rospy.logwarn("state: {0}\n".format(state))
+        rospy.logwarn("state: {0}".format(state))
+        rospy.logwarn("light_wp: {0}\n".format(light_wp))
 
         '''
         Publish upcoming red lights at camera frequency.
@@ -127,16 +130,18 @@ class TLDetector(object):
             int: ID of traffic light color (specified in styx_msgs/TrafficLight)
 
         """
+        if(not self.has_image):
+            self.prev_light_loc = None
+            return False
         
-        return light.state
-#        if(not self.has_image):
-#            self.prev_light_loc = None
-#            return False
+        if self.config['is_site']:
 
-#        cv_image = self.bridge.imgmsg_to_cv2(self.camera_image, "bgr8")
+            cv_image = self.bridge.imgmsg_to_cv2(self.camera_image, "bgr8")
 
-#        #Get classification
-#        return self.light_classifier.get_classification(cv_image)
+            #Get classification
+            return self.light_classifier.pipeline_classification(cv_image)
+        else:
+            return light.state
 
     def process_traffic_lights(self):
         """Finds closest visible traffic light, if one exists, and determines its
@@ -155,28 +160,52 @@ class TLDetector(object):
         # List of positions that correspond to the line to stop in front of for a given intersection
         stop_line_positions = self.config['stop_line_positions']
         if(self.pose):
-            #car_position = self.get_closest_waypoint(self.pose.pose)
+        #car_position = self.get_closest_waypoint(self.pose.pose)
 
         #TODO find the closest visible traffic light (if one exists)
 	    car_wp_idx = self.get_closest_waypoint(self.pose.pose.position.x, self.pose.pose.position.y)
 	    #rospy.logwarn("car_wp_idx: {0}\n".format(car_wp_idx))
           
             diff = len(self.waypoints.waypoints)
+            #rospy.logwarn("diff: {0}\n".format(diff))
+            #rospy.logwarn("len lights: {0}\n".format(len(self.lights)))
+
+            #if not self.config['is_site']:
             for i, light in enumerate(self.lights):
+                #rospy.logwarn("i: {0}\n".format(i))
+                #rospy.logwarn("configs sim")
                 # Get stop line waypoint index	
                 line = stop_line_positions[i]
                 temp_wp_idx = self.get_closest_waypoint(line[0], line[1])
                 # Find closest stop line waypoint index
 		d = temp_wp_idx - car_wp_idx
+                #rospy.logwarn("d: {0}\n".format(d))
 		if d >= 0 and d < diff:
 		    diff = d
 		    closest_light = light
 		    line_wp_idx = temp_wp_idx
-					
-	if closest_light:
+            """elif self.config['is_site']:
+                #rospy.logwarn("config real0")
+                for i, line in enumerate(stop_line_positions):
+                    #rospy.logwarn("configs real1")
+                    # Get stop line waypoint index
+                    temp_wp_idx = self.get_closest_waypoint(line[0], line[1])
+                    # Find closest stop line waypoint index
+		    d = temp_wp_idx - car_wp_idx
+                    #rospy.logwarn("d: {0}\n".format(d))
+		    if d >= 0 and d < diff:
+		        diff = d
+		        line_wp_idx = temp_wp_idx
+		"""			
+	if closest_light:# and not self.config['is_site']:
 	    state = self.get_light_state(closest_light)
 	    #rospy.logwarn("light.state: {0}\n".format(state))
             return line_wp_idx, state
+        """elif line_wp_idx and self.config['is_site']:
+            #rospy.logwarn("configs real2")
+            state = self.get_light_state()
+            return line_wp_idx, state
+       """     
 	
 
         #if light:
